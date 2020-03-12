@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from proton.reactor import Container, Selector
-from proton.handlers import MessagingHandler
+import asyncio
+import os
+from azure.eventhub.aio import EventHubConsumerClient
 from influxdb import InfluxDBClient
 
 import configparser
@@ -46,31 +47,6 @@ def connect_influxdb():
             break
 
 
-def connect_iothub(event):
-    # -1 = beginning
-    #  @latest = only new messages
-    offset = "-1"
-    selector = Selector(u"amqp.annotation.x-opt-offset > '" + offset + "'")
-
-    azure_config = configp['azure']
-    amqp_url = azure_config['IOTHUB_AMQP_URL']
-    partition_name = azure_config['IOTHUB_PARTITION_NAME']
-
-    while True:
-        try:
-            conn = event.container.connect(amqp_url, allowed_mechs="PLAIN")
-            event.container.create_receiver(conn, partition_name + "/ConsumerGroups/$default/Partitions/0",
-                                            options=selector)
-            event.container.create_receiver(conn, partition_name + "/ConsumerGroups/$default/Partitions/1",
-                                            options=selector)
-        except Exception:
-            logger.exception("Error connecting to IotHub. Retrying in 30sec")
-            time.sleep(30)
-            continue
-        else:
-            break
-
-
 def write_influxdb(payload):
     while True:
         try:
@@ -84,14 +60,15 @@ def write_influxdb(payload):
 
 
 def convert_to_influx_format(message):
-    name = message.annotations["iothub-connection-device-id"]
+    name = message.annotations[b'iothub-connection-device-id']
     try:
-        json_input = json.loads(message.body)
+        for jsonline in message.get_data():
+            json_input = json.loads(jsonline)
     except json.decoder.JSONDecodeError:
         return
 
     if 'temperature_C' not in json_input or 'humidity' not in json_input or 'battery' not in json_input:
-        logging.info('Ignoring event in unknown format')
+        logging.warn('Ignoring event in unknown format')
         return
 
     time = json_input["time"]
@@ -110,55 +87,66 @@ def convert_to_influx_format(message):
     return json_body
 
 
-class Receiver(MessagingHandler):
-    def __init__(self):
-        super(Receiver, self).__init__()
+async def on_event(partition_context, event):
+    # Put your code here.
+    # If the operation is i/o intensive, async will have better performance.
+    #print("Received event from partition: {}.".format(partition_context.partition_id))
+    logging.info("Event received: '{0}'".format(event.message))
 
-    def on_start(self, event):
-        connect_influxdb()
-        connect_iothub(event)
-        logging.info("Setup complete")
+    payload = convert_to_influx_format(event.message)
 
-    def on_message(self, event_received):
-        logging.info("Event received: '{0}'".format(event_received.message))
-
-        payload = convert_to_influx_format(event_received.message)
-
-        if payload is not None:
-            logging.info("Write points: {0}".format(payload))
-            write_influxdb(payload)
-
-    def on_connection_closing(self, event):
-        logging.error("Connection closing - trying to reestablish connection")
-        connect_iothub(event)
-
-    def on_connection_closed(self, event):
-        logging.error("Connection closed")
-        connect_iothub(event)
-
-    def on_connection_error(self, event):
-        logging.error("Connection error")
-
-    def on_disconnected(self, event):
-        logging.error("Disconnected")
-
-    def on_session_closing(self, event):
-        logging.error("Session closing")
-
-    def on_session_closed(self, event):
-        logging.error("Session closed")
-
-    def on_session_error(self, event):
-        logging.error("Session error")
+    if payload is not None:
+        logging.info("Write points: {0}".format(payload))
+        write_influxdb(payload)
+    await partition_context.update_checkpoint(event)
 
 
+async def on_partition_initialize(partition_context):
+    # Put your code here.
+    logging.info("Partition: {} has been initialized.".format(
+        partition_context.partition_id))
 
-def main():
-    try:
-        Container(Receiver()).run()
-    except KeyboardInterrupt:
-        pass
 
+async def on_partition_close(partition_context, reason):
+    # Put your code here.
+    logging.info("Partition: {} has been closed, reason for closing: {}.".format(
+        partition_context.partition_id,
+        reason
+    ))
+
+
+async def on_error(partition_context, error):
+    # Put your code here. partition_context can be None in the on_error callback.
+    if partition_context:
+        logging.error("An exception: {} occurred during receiving from Partition: {}.".format(
+            partition_context.partition_id,
+            error
+        ))
+    else:
+        logging.error(
+            "An exception: {} occurred during the load balance process.".format(error))
+
+
+async def main():
+    azure_config = configp['azure']
+    client = EventHubConsumerClient.from_connection_string(
+        conn_str=azure_config['CONNECTION_STR'],
+        consumer_group="$default",
+        eventhub_name=azure_config['EVENTHUB_NAME']
+    )
+
+    connect_influxdb()
+
+    async with client:
+        await client.receive(
+            on_event=on_event,
+            on_error=on_error,
+            on_partition_close=on_partition_close,
+            on_partition_initialize=on_partition_initialize,
+            # "-1" is from the beginning of the partition. @latest is only new
+            starting_position="-1",
+        )
 
 if __name__ == "__main__":
-    main()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())

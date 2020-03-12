@@ -1,2 +1,2 @@
-python-qpid-proton
+azure-eventhub
 influxdb
