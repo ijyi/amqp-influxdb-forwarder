@@ -6,29 +6,22 @@ import os
 from azure.eventhub.aio import EventHubConsumerClient
 from influxdb import InfluxDBClient
 
-import configparser
 import json
 import logging
 import time
-
-# Config file must be bound to docker image at runtime
-CONFIG_FILE_PATH = 'config/config.properties'
 
 FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
 
-configp = configparser.ConfigParser()
-configp.read(CONFIG_FILE_PATH)
+DB_NAME = os.getenv('INFLUXDB_DATABASE', 'mydb')
 
-influx_config = configp['influxdb']
-DB_NAME = influx_config['DATABASE']
 logging.info("Using database: '{0}'".format(DB_NAME))
 
-influxdb_client = InfluxDBClient(influx_config['HOSTNAME'],
-                                 influx_config['PORT'],
-                                 influx_config['USER'],
-                                 influx_config['PASSWORD'],
+influxdb_client = InfluxDBClient(os.getenv('INFLUXDB_HOSTNAME', 'influxdb'),
+                                 os.getenv('INFLUXDB_PORT', '8086'),
+                                 os.getenv('INFLUXDB_USER'),
+                                 os.getenv('INFLUXDB_PASSWORD'),
                                  DB_NAME)
 
 
@@ -67,12 +60,12 @@ def convert_to_influx_format(message):
     except json.decoder.JSONDecodeError:
         return
 
-    if 'temperature_C' not in json_input or 'humidity' not in json_input or 'battery' not in json_input:
+    if 'temperature' not in json_input:
         logging.warn('Ignoring event in unknown format')
         return
 
     time = json_input["time"]
-    temperature = json_input["temperature_C"]
+    temperature = json_input["temperature"]
     humidity = json_input["humidity"]
     battery_status = json_input["battery"]
 
@@ -128,14 +121,13 @@ async def on_error(partition_context, error):
 
 
 async def main():
-    azure_config = configp['azure']
-    client = EventHubConsumerClient.from_connection_string(
-        conn_str=azure_config['CONNECTION_STR'],
-        consumer_group="$default",
-        eventhub_name=azure_config['EVENTHUB_NAME']
-    )
-
     connect_influxdb()
+
+    client = EventHubConsumerClient.from_connection_string(
+        conn_str=os.getenv('IOTHUB_CONNECTION_STRING'),
+        consumer_group="$default",
+        eventhub_name=os.getenv('IOTHUB_EVENTHUB_NAME')
+    )
 
     async with client:
         await client.receive(
