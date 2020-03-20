@@ -1,2 +1,3 @@
 azure-eventhub
 influxdb
+pynmea2

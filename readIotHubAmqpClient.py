@@ -9,6 +9,7 @@ from influxdb import InfluxDBClient
 import json
 import logging
 import time
+import pynmea2
 from datetime import datetime
 
 FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
@@ -52,9 +53,45 @@ def write_influxdb(payload):
         else:
             break
 
+def decode_gps(nmea_str):
+    res = {}
+    msg = pynmea2.parse(nmea_str)
+
+    res['timestamp'] = str(msg.timestamp)
+    res['lat'] = float(msg.lat)
+    res['lat_dir'] = msg.lat_dir
+    res['lon'] = float(msg.lon)
+    res['lon_dir'] = msg.lon_dir
+    res['gps_qual'] = int(msg.gps_qual)
+    res['num_sats'] = int(msg.num_sats)
+    res['horizontal_dil'] = float(msg.horizontal_dil)
+    res['altitude'] = float(msg.altitude)
+    res['altitude_units'] = msg.altitude_units
+    res['geo_sep'] = msg.geo_sep
+    res['geo_sep_units'] = msg.geo_sep_units
+    res['age_gps_data'] = msg.age_gps_data
+    res['ref_station_id'] = msg.ref_station_id
+
+    return res
+
+def add_field_value(fields, name, field):
+    switcher = {
+        'float': float,
+        'int': int,
+        'str': str,
+        'nmea': decode_gps
+    }
+    func = switcher.get(field['type'], lambda: str)
+    res = func(field['value'])
+
+    if isinstance(res, dict):
+        for field in res:
+            fields[field] = res[field]
+    else:
+        fields[name] = res 
 
 def convert_to_influx_format(message):
-    name = message.annotations[b'iothub-connection-device-id']
+    name = message.annotations[b'iothub-connection-device-id'].decode('ASCII')
     try:
         for jsonline in message.get_data():
             json_input = json.loads(jsonline)
@@ -65,19 +102,28 @@ def convert_to_influx_format(message):
         logging.warn('Ignoring event in unknown format')
         return
 
-    if json_input["version"] != "0.0.2":
+    if json_input['version'] != '0.0.3':
         logging.warn('Ignoring event wrong version')
         return
 
-    time = datetime.fromtimestamp(int(json_input["time"]))
-    data = json_input["fields"]
+    time = datetime.fromtimestamp(int(json_input['time']))
+    measurement = json_input['measurement']
+    data = json_input['fields']
+
+    tags = {'device': name}
+    for tag in message.application_properties:
+        tags[tag.decode('ASCII')] = message.application_properties[tag].decode('ASCII')
 
     fields = {}
     for field in data:
-        fields[field] = float(data[field]["value"])
+        add_field_value(fields, field, data[field])
 
     json_body = [
-        {'measurement': name, 'time': time, 'fields': fields}
+        {
+            'measurement': measurement, 
+            'tags': tags,
+            'time': time, 
+            'fields': fields}
     ]
 
     return json_body
