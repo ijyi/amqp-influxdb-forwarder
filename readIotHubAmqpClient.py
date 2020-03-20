@@ -72,9 +72,9 @@ def convert_to_influx_format(message):
     time = datetime.fromtimestamp(int(json_input["time"]))
     data = json_input["fields"]
 
-    temperature = data["TEMP"]
-    humidity = data["HUMID"]
-    air_pressure = data["AIR_PRESS"]
+    temperature = float(data["TEMP"])
+    humidity = float(data["HUMID"])
+    air_pressure = float(data["AIR_PRESS"])
 
     json_body = [
         {'measurement': name, 'time': time, 'fields': {
