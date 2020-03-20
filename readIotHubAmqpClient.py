@@ -65,23 +65,19 @@ def convert_to_influx_format(message):
         logging.warn('Ignoring event in unknown format')
         return
 
-    if json_input["version"] != "0.0.1":
+    if json_input["version"] != "0.0.2":
         logging.warn('Ignoring event wrong version')
         return
 
     time = datetime.fromtimestamp(int(json_input["time"]))
     data = json_input["fields"]
 
-    temperature = float(data["TEMP"])
-    humidity = float(data["HUMID"])
-    air_pressure = float(data["AIR_PRESS"])
+    fields = {}
+    for field in data:
+        fields[field] = float(data[field]["value"])
 
     json_body = [
-        {'measurement': name, 'time': time, 'fields': {
-            "temperature": temperature,
-            "humidity": humidity,
-            "air_pressure": air_pressure
-        }}
+        {'measurement': name, 'time': time, 'fields': fields}
     ]
 
     return json_body
