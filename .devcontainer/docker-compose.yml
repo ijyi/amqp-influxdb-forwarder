@@ -1,0 +1,44 @@
+#-------------------------------------------------------------------------------------------------------------
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See https://go.microsoft.com/fwlink/?linkid=2090316 for license information.
+#-------------------------------------------------------------------------------------------------------------
+
+version: '3'
+services:
+  purechoas:
+    build:
+      context: ..
+    volumes: 
+      - ..:/purechaos
+    depends_on: 
+      - influxdb
+    environment:
+      - INFLUXDB_HOSTNAME=influxdb
+      - INFLUXDB_PORT=8086
+      - INFLUXDB_DATABASE=mydb
+      - INFLUXDB_USER=root
+      - INFLUXDB_PASSWORD=root
+      - IOTHUB_CONNECTION_STRING=Endpoint=sb://iothub-ns-purechaosi-3070248-c7e759da2b.servicebus.windows.net/;SharedAccessKeyName=iothubowner;SharedAccessKey=v1rvlOFKchLgRcEEq2t4QaGmsj9T9cCgfEXV0nYaUEc=;EntityPath=purechaosiothub
+      - IOTHUB_EVENTHUB_NAME=purechaosiothub
+  influxdb:
+    image: influxdb
+    ports:
+      - 8086:8086
+    volumes: 
+      - influxdb:/var/lib/influxdb
+  chronograf:
+    image: chronograf
+    depends_on: 
+      - influxdb
+    environment:
+      - influxdb-url=http://influxdb:8086
+    ports:
+      - 80:8888
+    volumes: 
+      - chronograf:/var/lib/chronograf
+
+volumes:
+  influxdb:
+    driver: local
+  chronograf:
+    driver: local

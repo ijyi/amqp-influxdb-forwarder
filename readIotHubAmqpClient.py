@@ -9,6 +9,7 @@ from influxdb import InfluxDBClient
 import json
 import logging
 import time
+from datetime import datetime
 
 FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -60,20 +61,26 @@ def convert_to_influx_format(message):
     except json.decoder.JSONDecodeError:
         return
 
-    if 'temperature' not in json_input:
+    if 'version' not in json_input:
         logging.warn('Ignoring event in unknown format')
         return
 
-    time = json_input["time"]
-    temperature = json_input["temperature"]
-    humidity = json_input["humidity"]
-    battery_status = json_input["battery"]
+    if json_input["version"] != "0.0.1":
+        logging.warn('Ignoring event wrong version')
+        return
+
+    time = datetime.fromtimestamp(int(json_input["time"]))
+    data = json_input["fields"]
+
+    temperature = data["TEMP"]
+    humidity = data["HUMID"]
+    air_pressure = data["AIR_PRESS"]
 
     json_body = [
         {'measurement': name, 'time': time, 'fields': {
             "temperature": temperature,
             "humidity": humidity,
-            "battery": battery_status
+            "air_pressure": air_pressure
         }}
     ]
 
@@ -136,7 +143,7 @@ async def main():
             on_partition_close=on_partition_close,
             on_partition_initialize=on_partition_initialize,
             # "-1" is from the beginning of the partition. @latest is only new
-            starting_position="-1",
+            starting_position="@latest",
         )
 
 if __name__ == "__main__":
