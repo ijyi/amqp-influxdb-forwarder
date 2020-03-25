@@ -5,6 +5,7 @@ import asyncio
 import os
 from azure.eventhub.aio import EventHubConsumerClient
 from influxdb import InfluxDBClient
+from collections.abc import Iterable
 
 import json
 import logging
@@ -111,8 +112,9 @@ def convert_to_influx_format(message):
     data = json_input['fields']
 
     tags = {'device': name}
-    for tag in message.application_properties:
-        tags[tag.decode('ASCII')] = message.application_properties[tag].decode('ASCII')
+    if isinstance(message.application_properties, Iterable):
+        for tag in message.application_properties:
+            tags[tag.decode('ASCII')] = message.application_properties[tag].decode('ASCII')
 
     fields = {}
     for field in data:
