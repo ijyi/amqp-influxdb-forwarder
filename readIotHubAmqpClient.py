@@ -100,11 +100,11 @@ def convert_to_influx_format(message):
         return
 
     if 'version' not in json_input:
-        logging.warn('Ignoring event in unknown format')
+        logging.warning('Ignoring event in unknown format')
         return
 
     if json_input['version'] != '0.0.3':
-        logging.warn('Ignoring event wrong version')
+        logging.warning('Ignoring event wrong version')
         return
 
     time = datetime.fromtimestamp(int(json_input['time']))
@@ -119,6 +119,10 @@ def convert_to_influx_format(message):
     fields = {}
     for field in data:
         add_field_value(fields, field, data[field])
+
+    if fields == {}:
+        logging.warning('Ignoring event as it contains no readable fields')
+        return
 
     json_body = [
         {
