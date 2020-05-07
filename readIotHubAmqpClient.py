@@ -107,7 +107,11 @@ def convert_to_influx_format(message):
         logging.warning('Ignoring event wrong version')
         return
 
-    time = datetime.fromtimestamp(int(json_input['time']))
+    if 'time' in json_input:
+        time = datetime.fromtimestamp(int(json_input['time']))
+    else:
+        time = datetime.now()
+
     measurement = json_input['measurement']
     data = json_input['fields']
 
