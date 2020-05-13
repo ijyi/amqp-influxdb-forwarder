@@ -75,21 +75,21 @@ def decode_gps(nmea_str):
 
     return res
 
-def add_field_value(fields, name, field):
+def add_field_value(fields, data):
     switcher = {
         'float': float,
         'int': int,
         'str': str,
         'nmea': decode_gps
     }
-    func = switcher.get(field['type'], lambda: str)
-    res = func(field['value'])
+    func = switcher.get(data['type'], lambda: str)
+    res = func(data['value'])
 
     if isinstance(res, dict):
         for field in res:
             fields[field] = res[field]
     else:
-        fields[name] = res 
+        fields['value'] = res 
 
 def convert_to_influx_format(message):
     name = message.annotations[b'iothub-connection-device-id'].decode('ASCII')
@@ -121,8 +121,8 @@ def convert_to_influx_format(message):
             tags[tag.decode('ASCII')] = message.application_properties[tag].decode('ASCII')
 
     fields = {}
-    for field in data:
-        add_field_value(fields, field, data[field])
+
+    add_field_value(fields, data)
 
     if fields == {}:
         logging.warning('Ignoring event as it contains no readable fields')
