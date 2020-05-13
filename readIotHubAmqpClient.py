@@ -145,13 +145,15 @@ async def on_event(partition_context, event):
     #print("Received event from partition: {}.".format(partition_context.partition_id))
     logging.info("Event received: '{0}'".format(event.message))
 
-    payload = convert_to_influx_format(event.message)
+    try:
+        payload = convert_to_influx_format(event.message)
 
-    if payload is not None:
-        logging.info("Write points: {0}".format(payload))
-        write_influxdb(payload)
-    await partition_context.update_checkpoint(event)
-
+        if payload is not None:
+            logging.info("Write points: {0}".format(payload))
+            write_influxdb(payload)
+        await partition_context.update_checkpoint(event)
+    except:
+        logging.exception("Failed to handle event")
 
 async def on_partition_initialize(partition_context):
     # Put your code here.
