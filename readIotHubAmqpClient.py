@@ -59,14 +59,16 @@ def decode_gps(nmea_str):
     msg = pynmea2.parse(nmea_str)
 
     res['timestamp'] = str(msg.timestamp)
-    res['lat'] = float(msg.lat)
+    res['lat'] = msg.lat
+    res['latitude'] = msg.latitude
     res['lat_dir'] = msg.lat_dir
-    res['lon'] = float(msg.lon)
+    res['lon'] = msg.lon
+    res['longitude'] = msg.longitude
     res['lon_dir'] = msg.lon_dir
-    res['gps_qual'] = int(msg.gps_qual)
-    res['num_sats'] = int(msg.num_sats)
-    res['horizontal_dil'] = float(msg.horizontal_dil)
-    res['altitude'] = float(msg.altitude)
+    res['gps_qual'] = msg.gps_qual
+    res['num_sats'] = msg.num_sats
+    res['horizontal_dil'] = msg.horizontal_dil
+    res['altitude'] = msg.altitude
     res['altitude_units'] = msg.altitude_units
     res['geo_sep'] = msg.geo_sep
     res['geo_sep_units'] = msg.geo_sep_units
@@ -82,6 +84,14 @@ def add_field_value(fields, data):
         'str': str,
         'nmea': decode_gps
     }
+    
+    if 'GPS' in data:
+        add_field_value(fields, data['GPS'])
+        return
+    elif 'RSRP' in data:
+        add_field_value(fields, data['RSRP'])
+        return
+
     func = switcher.get(data['type'], lambda: str)
     res = func(data['value'])
 
@@ -92,7 +102,7 @@ def add_field_value(fields, data):
         fields['value'] = res 
 
 def convert_to_influx_format(message):
-    name = message.annotations[b'iothub-connection-device-id'].decode('ASCII')
+    name = message.annotations[b'iothub-connection-device-id'].decode('ASCII')  
     try:
         for jsonline in message.get_data():
             json_input = json.loads(jsonline)
@@ -110,7 +120,7 @@ def convert_to_influx_format(message):
     if 'time' in json_input:
         time = datetime.fromtimestamp(int(json_input['time']))
     else:
-        time = datetime.now()
+        time = datetime.utcfromtimestamp(float(message.annotations[b'iothub-enqueuedtime'])/1000.)
 
     measurement = json_input['measurement']
     data = json_input['fields']
@@ -133,7 +143,8 @@ def convert_to_influx_format(message):
             'measurement': measurement, 
             'tags': tags,
             'time': time, 
-            'fields': fields}
+            'fields': fields
+        }
     ]
 
     return json_body
